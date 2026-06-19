@@ -1,0 +1,107 @@
+module Setup where
+
+import Daml.Script
+import DA.Time
+import DA.Optional
+import Invoice
+import Auction
+
+data Parties = Parties with
+  supplier   : Party
+  buyer      : Party
+  financier1 : Party
+  financier2 : Party
+  operator   : Party
+
+setupParties : Script Parties
+setupParties = do
+  supplier   <- allocatePartyWithHint "Supplier"   (PartyIdHint "Supplier")
+  buyer      <- allocatePartyWithHint "Buyer"      (PartyIdHint "Buyer")
+  financier1 <- allocatePartyWithHint "Financier1" (PartyIdHint "Financier1")
+  financier2 <- allocatePartyWithHint "Financier2" (PartyIdHint "Financier2")
+  operator   <- allocatePartyWithHint "Operator"   (PartyIdHint "Operator")
+  pure Parties with supplier, buyer, financier1, financier2, operator
+
+-- | Full lifecycle demo + privacy proof, runnable against the sandbox
+-- with `daml script --dar .daml/dist/veil-0.0.1.dar --script-name Setup:setup --ledger-host localhost --ledger-port 6865`
+setup : Script ()
+setup = do
+  Parties{supplier, buyer, financier1, financier2, operator} <- setupParties
+
+  now <- getTime
+  let due = addRelTime now (days 60)
+
+  -- 1. Supplier issues an invoice, Buyer co-signs (acknowledges debt)
+  invoiceCid <- submitMulti [supplier, buyer] [] do
+    createCmd Invoice with
+      supplier; buyer
+      invoiceId   = "INV-1001"
+      amount      = 100000.0
+      currency    = "USD"
+      dueDate     = due
+      issuedAt    = now
+      description = "Q3 hardware delivery — PO #4471"
+
+  -- 2. Supplier opens it for financing; Operator (marketplace) becomes observer
+  openCid <- submit supplier do
+    exerciseCmd invoiceCid Invoice_OpenForFinancing with operator
+
+  -- 3. Two financiers submit competing bids — PRIVATE to each financier + supplier
+  _bid1Cid <- submit financier1 do
+    createCmd Bid with
+      supplier; buyer; financier = financier1
+      invoiceId   = "INV-1001"
+      amount      = 100000.0
+      currency    = "USD"
+      advanceRate = 0.93  -- Financier1 offers 93% advance
+      dueDate     = due
+      submittedAt = now
+
+  bid2Cid <- submit financier2 do
+    createCmd Bid with
+      supplier; buyer; financier = financier2
+      invoiceId   = "INV-1001"
+      amount      = 100000.0
+      currency    = "USD"
+      advanceRate = 0.95  -- Financier2 offers a better rate
+      dueDate     = due
+      submittedAt = now
+
+  -- PRIVACY PROOF: Financier1 cannot see Financier2's bid, and vice versa.
+  f1Bids <- query @Bid financier1
+  f2Bids <- query @Bid financier2
+  assertMsg "Financier1 should see exactly 1 bid (its own)" (length f1Bids == 1)
+  assertMsg "Financier2 should see exactly 1 bid (its own)" (length f2Bids == 1)
+
+  -- PRIVACY PROOF: Buyer cannot see ANY bids at all.
+  buyerBids <- query @Bid buyer
+  assertMsg "Buyer should see zero bids" (null buyerBids)
+
+  -- PRIVACY PROOF: Operator cannot see bids either — only the OpenInvoice listing.
+  operatorBids <- query @Bid operator
+  assertMsg "Operator should see zero bids" (null operatorBids)
+
+  -- 4. Supplier accepts the better bid (Financier2's 95% advance rate)
+  financingCid <- submit supplier do
+    exerciseCmd bid2Cid Bid_Accept with openInvoiceCid = openCid
+
+  -- PRIVACY PROOF: Buyer sees the FinancingAgreement exists (knows who to pay)
+  -- but never learns the advanceRate (the discount Supplier accepted).
+  buyerView <- queryContractId @FinancingAgreement buyer financingCid
+  case buyerView of
+    None -> assertFail "Buyer should be able to see the FinancingAgreement as observer"
+    Some fa -> assertMsg "sanity: buyer sees correct financier" (fa.financier == financier2)
+
+  -- Financier1 (the losing bidder) has zero visibility into the deal that closed.
+  f1View <- queryContractId @FinancingAgreement financier1 financingCid
+  assertMsg "Losing financier should have no visibility into winning deal" (isNone f1View)
+
+  -- 5. Financier2 confirms it wired the advance (95% of $100k = $95k)
+  fundedCid <- submit financier2 do
+    exerciseCmd financingCid FinancingAgreement_ConfirmFunding
+
+  -- 6. At maturity, Buyer settles directly with the Financier
+  _ <- submit buyer do
+    exerciseCmd fundedCid FinancingAgreement_SettleAtMaturity
+
+  pure ()

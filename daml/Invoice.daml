@@ -1,0 +1,76 @@
+module Invoice where
+
+-- | An Invoice is created by a Supplier, acknowledged by a Buyer.
+-- Buyer and Supplier are the only parties who see commercial details
+-- at this stage. No financier sees anything until the Supplier
+-- explicitly opens it for bidding (see Auction.daml).
+template Invoice
+  with
+    supplier    : Party
+    buyer       : Party
+    invoiceId   : Text
+    amount      : Decimal
+    currency    : Text
+    dueDate     : Time
+    issuedAt    : Time
+    description : Text
+  where
+    signatory supplier, buyer
+    ensure amount > 0.0
+
+    key (supplier, invoiceId) : (Party, Text)
+    maintainer key._1
+
+    -- Buyer confirms the invoice is genuine and payable.
+    -- This is the precondition for the Supplier to seek financing on it.
+    choice Invoice_OpenForFinancing : ContractId OpenInvoice
+      with
+        operator : Party
+      controller supplier
+      do
+        create OpenInvoice with
+          supplier; buyer; invoiceId; amount; currency; dueDate; issuedAt; description; operator
+
+    choice Invoice_Cancel : ()
+      controller supplier
+      do
+        pure ()
+
+-- | Once opened for financing, the invoice becomes visible to the
+-- Operator (the marketplace) so it can route bid invitations, but
+-- the Operator never sees the underlying buyer/supplier commercial
+-- terms in the Bid contracts themselves (see Auction.daml).
+template OpenInvoice
+  with
+    supplier    : Party
+    buyer       : Party
+    invoiceId   : Text
+    amount      : Decimal
+    currency    : Text
+    dueDate     : Time
+    issuedAt    : Time
+    description : Text
+    operator    : Party
+  where
+    signatory supplier, buyer
+    observer operator
+
+    key (supplier, invoiceId) : (Party, Text)
+    maintainer key._1
+
+    choice OpenInvoice_Withdraw : ContractId Invoice
+      controller supplier
+      do
+        create Invoice with
+          supplier; buyer; invoiceId; amount; currency; dueDate; issuedAt; description
+
+    -- Supplier-controlled consuming choice that closes out the listing
+    -- once financing is accepted. Buyer pre-delegated this authority by
+    -- co-signing the original Invoice and exercising
+    -- Invoice_OpenForFinancing jointly with supplier -- the standard Daml
+    -- pattern of a signatory granting a counterparty unilateral authority
+    -- over a specific, narrow follow-on action.
+    choice OpenInvoice_AcceptFinancing : ()
+      controller supplier
+      do
+        pure ()

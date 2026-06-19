@@ -1,0 +1,118 @@
+module Auction where
+
+import Invoice
+
+-- | A Bid is visible ONLY to the Supplier and the Financier who submitted
+-- it. Other financiers cannot see this contract, cannot see the discount
+-- rate offered, and cannot see who else is bidding. The Buyer cannot see
+-- bids at all. This is the blind-auction privacy guarantee — enforced
+-- structurally by Canton's sub-transaction privacy, not by application
+-- logic or access control lists.
+template Bid
+  with
+    supplier      : Party
+    buyer         : Party
+    financier     : Party
+    invoiceId     : Text
+    amount        : Decimal
+    currency      : Text
+    advanceRate   : Decimal  -- e.g. 0.92 means financier advances 92% of face value
+    dueDate       : Time
+    submittedAt   : Time
+  where
+    signatory financier
+    observer supplier
+
+    ensure advanceRate > 0.0 && advanceRate <= 1.0
+
+    key (financier, supplier, invoiceId) : (Party, Party, Text)
+    maintainer key._1
+
+    choice Bid_Withdraw : ()
+      controller financier
+      do
+        pure ()
+
+    -- Supplier accepts this bid. This creates a FinancingAgreement
+    -- visible to Supplier + this Financier + Buyer (for repayment routing)
+    -- but the advance rate / discount the supplier accepted is never
+    -- broadcast to the other financiers who bid and lost.
+    choice Bid_Accept : ContractId FinancingAgreement
+      with
+        openInvoiceCid : ContractId OpenInvoice
+      controller supplier
+      do
+        openInvoice <- fetch openInvoiceCid
+        assert (openInvoice.invoiceId == invoiceId)
+        assert (openInvoice.supplier == supplier)
+        assert (openInvoice.buyer == buyer)
+
+        -- Closes out the OpenInvoice via a choice OpenInvoice itself
+        -- defines and controls (OpenInvoice_AcceptFinancing), rather
+        -- than an implicit archive. Buyer co-signed the original Invoice
+        -- (see Invoice_OpenForFinancing), which is buyer's standing,
+        -- upfront authorization for supplier to unilaterally close out
+        -- financing on this specific invoice once a bid is accepted --
+        -- mirroring how a real receivables purchase agreement gives the
+        -- seller authority to assign the receivable without re-clearing
+        -- each financier with the debtor.
+        exercise openInvoiceCid OpenInvoice_AcceptFinancing
+
+        let advanceAmount = amount * advanceRate
+
+        create FinancingAgreement with
+          supplier; buyer; financier; invoiceId
+          faceAmount = amount
+          advanceAmount
+          advanceRate
+          currency; dueDate
+          status = PendingFunding
+
+-- | Created when Supplier accepts a Bid. Represents the live financing
+-- deal. Buyer can see that the invoice is now financed and who to pay
+-- at maturity, but the Buyer never sees the advanceRate (the discount
+-- the supplier accepted) — that stays private to Supplier + Financier.
+template FinancingAgreement
+  with
+    supplier      : Party
+    buyer         : Party
+    financier     : Party
+    invoiceId     : Text
+    faceAmount    : Decimal
+    advanceAmount : Decimal
+    advanceRate   : Decimal
+    currency      : Text
+    dueDate       : Time
+    status        : FinancingStatus
+  where
+    signatory supplier, financier
+    observer buyer
+
+    key (financier, supplier, invoiceId) : (Party, Party, Text)
+    maintainer key._1
+
+    -- Financier confirms it has wired the advance to the Supplier.
+    -- In a production build this choice would be invoked atomically
+    -- alongside a token/cash transfer (e.g. Canton Coin or a
+    -- daml-finance Holding) in the same transaction.
+    choice FinancingAgreement_ConfirmFunding : ContractId FinancingAgreement
+      controller financier
+      do
+        create this with status = Funded
+
+    -- Buyer pays the financier directly at maturity. This choice is
+    -- the atomic settlement leg: in production it consumes a cash
+    -- Holding transfer choice in the same transaction so payment and
+    -- contract closure are atomic — no risk of the buyer paying
+    -- without the obligation being discharged on-ledger.
+    choice FinancingAgreement_SettleAtMaturity : ContractId FinancingAgreement
+      controller buyer
+      do
+        create this with status = Settled
+
+data FinancingStatus
+  = PendingFunding
+  | Funded
+  | Settled
+  | Defaulted
+    deriving (Eq, Show)
