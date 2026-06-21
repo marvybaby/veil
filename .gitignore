@@ -1,3 +1,5 @@
 /.daml
 /log
 navigator.log
+
+daml.js/
