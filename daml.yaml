@@ -5,6 +5,18 @@ sdk-version: 2.10.4
 name: veil
 source: daml
 init-script: Setup:setup
+
+sandbox-options:
+  - --wall-clock-time
+
+navigator-options:
+  - --feature-user-management=false
+parties:
+  - Supplier
+  - Buyer
+  - Financier1
+  - Financier2
+  - Operator
 version: 0.0.1
 dependencies:
   - daml-prim
