@@ -1,164 +1,81 @@
-// Copyright (c) 2022 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-
-import React, { useCallback, useState } from "react";
-import { Button, Form, Grid, Header, Image, Segment } from "semantic-ui-react";
-import Credentials, { PublicParty } from "../Credentials";
-import Ledger from "@daml/ledger";
-import {
-  DamlHubLogin as DamlHubLoginBtn,
-  usePublicParty,
-} from "@daml/hub-react";
-import { authConfig, Insecure } from "../config";
+import React, { useState } from 'react';
+import { Button, Form, Grid, Header, Image, Segment } from 'semantic-ui-react';
+import { Credentials } from '../Credentials';
+import { encode } from 'jwt-simple';
 
 type Props = {
   onLogin: (credentials: Credentials) => void;
 };
 
-/**
- * React component for the login screen of the `App`.
- */
+const LOGIN_PARTIES = ['Supplier', 'Buyer', 'Financier1', 'Financier2', 'Operator'];
+
+const makeToken = (party: string): string => {
+  const payload = {
+    sub: party,
+    scope: 'daml_ledger_api',
+  };
+  return encode(payload, 'secret', 'HS256');
+};
+
 const LoginScreen: React.FC<Props> = ({ onLogin }) => {
-  const login = useCallback(
-    async (credentials: Credentials) => {
-      onLogin(credentials);
-    },
-    [onLogin],
-  );
+  const [party, setParty] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const wrap: (c: JSX.Element) => JSX.Element = component => (
-    <Grid textAlign="center" style={{ height: "100vh" }} verticalAlign="middle">
-      <Grid.Column style={{ maxWidth: 450 }}>
-        <Header
-          as="h1"
-          textAlign="center"
-          size="huge"
-          style={{ color: "#223668" }}>
-          <Header.Content>
-            Create
-            <Image
-              as="a"
-              href="https://www.digitalasset.com/developers"
-              target="_blank"
-              src="/daml.svg"
-              alt="Daml Logo"
-              spaced
-              size="small"
-              verticalAlign="bottom"
-            />
-            App
-          </Header.Content>
-        </Header>
-        <Form size="large" className="test-select-login-screen">
-          <Segment>{component}</Segment>
-        </Form>
-      </Grid.Column>
-    </Grid>
-  );
-
-  const InsecureLogin: React.FC<{ auth: Insecure }> = ({ auth }) => {
-    const [username, setUsername] = React.useState("");
-
-    const handleLogin = async (event: React.FormEvent) => {
-      event.preventDefault();
-      const token = auth.makeToken(username);
-      const ledger = new Ledger({ token: token });
-      const primaryParty: string = await auth.userManagement
-        .primaryParty(username, ledger)
-        .catch(error => {
-          const errorMsg =
-            error instanceof Error ? error.toString() : JSON.stringify(error);
-          alert(`Failed to login as '${username}':\n${errorMsg}`);
-          throw error;
-        });
-
-      const useGetPublicParty = (): PublicParty => {
-        const [publicParty, setPublicParty] = useState<string | undefined>(
-          undefined,
-        );
-        const setup = () => {
-          const fn = async () => {
-            const publicParty = await auth.userManagement
-              .publicParty(username, ledger)
-              .catch(error => {
-                const errorMsg =
-                  error instanceof Error
-                    ? error.toString()
-                    : JSON.stringify(error);
-                alert(
-                  `Failed to find primary party for user '${username}':\n${errorMsg}`,
-                );
-                throw error;
-              });
-            // todo stop yolowing error handling
-            setPublicParty(publicParty);
-          };
-          fn();
-        };
-        return { usePublicParty: () => publicParty, setup: setup };
-      };
-      await login({
-        user: { userId: username, primaryParty: primaryParty },
-        party: primaryParty,
-        token: auth.makeToken(username),
-        getPublicParty: useGetPublicParty,
+  const handleLogin = async (selectedParty: string) => {
+    setLoading(true);
+    try {
+      const token = makeToken(selectedParty);
+      onLogin({
+        party: selectedParty,
+        token,
+        user: { userId: selectedParty, primaryParty: selectedParty },
       });
-    };
-
-    return wrap(
-      <>
-        {/* FORM_BEGIN */}
-        <Form.Input
-          fluid
-          placeholder="Username"
-          value={username}
-          className="test-select-username-field"
-          onChange={(e, { value }) => setUsername(value?.toString() ?? "")}
-        />
-        <Button
-          primary
-          fluid
-          className="test-select-login-button"
-          onClick={handleLogin}>
-          Log in
-        </Button>
-        {/* FORM_END */}
-      </>,
-    );
+    } catch (e) {
+      alert(`Login error: ${JSON.stringify(e)}`);
+    }
+    setLoading(false);
   };
 
-  const DamlHubLogin: React.FC = () =>
-    wrap(
-      <DamlHubLoginBtn
-        onLogin={creds => {
-          if (creds) {
-            login({
-              party: creds.party,
-              user: { userId: creds.partyName, primaryParty: creds.party },
-              token: creds.token,
-              getPublicParty: () => ({
-                usePublicParty: () => usePublicParty(),
-                setup: () => {},
-              }),
-            });
-          }
-        }}
-        options={{
-          method: {
-            button: {
-              render: () => <Button primary fluid />,
-            },
-          },
-        }}
-      />,
-    );
+  return (
+    <Grid textAlign='center' style={{ height: '100vh' }} verticalAlign='middle'>
+      <Grid.Column style={{ maxWidth: 450 }}>
+        <Header as='h1' textAlign='center'>
+          🔐 Veil
+          <Header.Subheader>
+            Confidential Invoice Financing on Canton
+          </Header.Subheader>
+        </Header>
 
-  return authConfig.provider === "none" ? (
-    <InsecureLogin auth={authConfig} />
-  ) : authConfig.provider === "daml-hub" ? (
-    <DamlHubLogin />
-  ) : (
-    <div>Invalid configuation.</div>
+        <Segment>
+          <Header as='h4'>Select your role to log in</Header>
+          <p style={{ color: 'grey', fontSize: '0.9em' }}>
+            Each party sees only what Canton's privacy model allows.
+          </p>
+
+          {LOGIN_PARTIES.map(p => (
+            <Button
+              key={p}
+              fluid
+              primary={p === 'Supplier'}
+              secondary={p.startsWith('Financier')}
+              style={{ marginBottom: '0.5em' }}
+              loading={loading && party === p}
+              onClick={() => { setParty(p); handleLogin(p); }}
+            >
+              {p === 'Supplier' && '📄 '}
+              {p.startsWith('Financier') && '💰 '}
+              {p === 'Buyer' && '🏢 '}
+              {p === 'Operator' && '⚙️ '}
+              {p}
+            </Button>
+          ))}
+        </Segment>
+
+        <p style={{ color: 'grey', fontSize: '0.8em' }}>
+          Running against local Canton sandbox · Port 7575
+        </p>
+      </Grid.Column>
+    </Grid>
   );
 };
 

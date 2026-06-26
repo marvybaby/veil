@@ -1,98 +1,43 @@
-// Copyright (c) 2022 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
+import React, { useState } from 'react';
+import { Container, Header, Segment, Tab } from 'semantic-ui-react';
+import { userContext } from './App';
+import SupplierView from './SupplierView';
 
-import React, { useMemo } from 'react';
-import { Container, Grid, Header, Icon, Segment, Divider } from 'semantic-ui-react';
-import { Party } from '@daml/types';
-import { User } from '@daml.js/veil-ui';
-import { publicContext, userContext } from './App';
-import UserList from './UserList';
-import PartyListEdit from './PartyListEdit';
+import FinancierView from './FinancierView';
+import BuyerView from './BuyerView';
 
-// USERS_BEGIN
 const MainView: React.FC = () => {
-  const username = userContext.useParty();
-  const myUserResult = userContext.useStreamFetchByKeys(User.User, () => [username], [username]);
-  const aliases = publicContext.useStreamQueries(User.Alias, () => [], []);
-  const myUser = myUserResult.contracts[0]?.payload;
-  const allUsers = userContext.useStreamQueries(User.User).contracts;
-// USERS_END
+  const party = userContext.useParty();
 
-  // Sorted list of users that are following the current user
-  const followers = useMemo(() =>
-    allUsers
-    .map(user => user.payload)
-    .filter(user => user.username !== username)
-    .sort((x, y) => x.username.localeCompare(y.username)),
-    [allUsers, username]);
+  const getRole = (party: string) => {
+    if (party.startsWith('Supplier')) return 'supplier';
+    if (party.startsWith('Financier')) return 'financier';
+    if (party.startsWith('Buyer')) return 'buyer';
+    return 'unknown';
+  };
 
-  // Map to translate party identifiers to aliases.
-  const partyToAlias = useMemo(() =>
-    new Map<Party, string>(aliases.contracts.map(({payload}) => [payload.username, payload.alias])),
-    [aliases]
-  );
-  const myUserName = aliases.loading ? 'loading ...' : partyToAlias.get(username) ?? username;
-
-  // FOLLOW_BEGIN
-  const ledger = userContext.useLedger();
-
-  const follow = async (userToFollow: Party): Promise<boolean> => {
-    try {
-      await ledger.exerciseByKey(User.User.Follow, username, {userToFollow});
-      return true;
-    } catch (error) {
-      alert(`Unknown error:\n${JSON.stringify(error)}`);
-      return false;
-    }
-  }
-  // FOLLOW_END
+  const role = getRole(party);
 
   return (
-    <Container>
-      <Grid centered columns={2}>
-        <Grid.Row stretched>
-          <Grid.Column>
-            <Header as='h1' size='huge' color='blue' textAlign='center' style={{padding: '1ex 0em 0ex 0em'}}>
-                {myUserName ? `Welcome, ${myUserName}!` : 'Loading...'}
-            </Header>
+    <Container style={{ marginTop: '2em' }}>
+      <Header as='h2'>
+        Welcome, {party}
+        <Header.Subheader>
+          {role === 'supplier' && 'Issue invoices and accept financing offers'}
+          {role === 'financier' && 'Browse open invoices and submit private bids'}
+          {role === 'buyer' && 'View your financed invoices and settle at maturity'}
+          {role === 'unknown' && 'Connected to Veil ledger'}
+        </Header.Subheader>
+      </Header>
 
-            <Segment>
-              <Header as='h2'>
-                <Icon name='user' />
-                <Header.Content>
-                  {myUserName ?? 'Loading...'}
-                  <Header.Subheader>Users I'm following</Header.Subheader>
-                </Header.Content>
-              </Header>
-              <Divider />
-              <PartyListEdit
-                parties={myUser?.following ?? []}
-                partyToAlias={partyToAlias}
-                onAddParty={follow}
-              />
-            </Segment>
-            <Segment>
-              <Header as='h2'>
-                <Icon name='globe' />
-                <Header.Content>
-                  The Network
-                  <Header.Subheader>My followers and users they are following</Header.Subheader>
-                </Header.Content>
-              </Header>
-              <Divider />
-              {/* USERLIST_BEGIN */}
-              <UserList
-                users={followers}
-                partyToAlias={partyToAlias}
-                onFollow={follow}
-              />
-              {/* USERLIST_END */}
-            </Segment>
-          </Grid.Column>
-        </Grid.Row>
-      </Grid>
+      <Segment>
+        {role === 'supplier' && <SupplierView />}
+        {role === 'financier' && <FinancierView />}
+        {role === 'buyer' && <BuyerView />}
+        {role === 'unknown' && <p>Your party role could not be determined.</p>}
+      </Segment>
     </Container>
   );
-}
+};
 
 export default MainView;
