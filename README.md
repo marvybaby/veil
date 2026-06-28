@@ -77,7 +77,7 @@ Supplier ──issues, Buyer co-signs──▶ Invoice
 
 ## Tech stack
 
-- **Daml** (SDK 2.10.4) — smart contract layer, deployed to a Canton participant node
+-  **Daml** (SDK 3.4.11) — smart contract layer, deployed to Canton via Seaport DevNet
 - Three core templates: `Invoice` / `OpenInvoice` (`daml/Invoice.daml`), `Bid` / `FinancingAgreement` (`daml/Auction.daml`)
 - Daml Script (`daml/Setup.daml`) — seeds demo parties and runs the full lifecycle end-to-end as an automated, assertion-checked test
 
@@ -97,7 +97,7 @@ assertMsg "Buyer should see zero bids" (null buyerBids)
 assertMsg "Losing financier should have no visibility into winning deal" (isNone f1View)
 ```
 
-Run it yourself:
+Run it yourself (local):
 
 ```bash
 daml build
@@ -111,6 +111,13 @@ To run it against a live local Canton sandbox instead of the in-memory test runn
 ```bash
 daml start
 ```
+
+Deploy to Seaport DevNet:
+1. Connect this repo to your Seaport project (Import from GitHub)
+2. Click **Build Project** in Seaport — requires SDK 3.4.11
+3. Click **Deploy** → select the 5n sandbox validator
+4. Use the Contracts tab to create and exercise contracts on the live network
+5. Or run the React frontend (`cd ui && npm install && npm start`) against the Seaport JSON API
 
 This builds, launches the sandbox, runs the init script, and opens Navigator so you can inspect each party's ledger view directly in the browser.
 
