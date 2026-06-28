@@ -13,6 +13,10 @@ const makeToken = (party: string): string => {
   const payload = {
     sub: party,
     scope: 'daml_ledger_api',
+    act: {
+      sub: party,
+    },
+    aud: 'https://daml.com/ledger-api',
   };
   return encode(payload, 'secret', 'HS256');
 };
