@@ -25,8 +25,6 @@ template Bid
 
     ensure advanceRate > 0.0 && advanceRate <= 1.0
 
-    key (financier, supplier, invoiceId) : (Party, Party, Text)
-    maintainer key._1
 
     choice Bid_Withdraw : ()
       controller financier
@@ -88,8 +86,6 @@ template FinancingAgreement
     signatory supplier, financier
     observer buyer
 
-    key (financier, supplier, invoiceId) : (Party, Party, Text)
-    maintainer key._1
 
     -- Financier confirms it has wired the advance to the Supplier.
     -- In a production build this choice would be invoked atomically

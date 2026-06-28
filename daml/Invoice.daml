@@ -18,8 +18,6 @@ template Invoice
     signatory supplier, buyer
     ensure amount > 0.0
 
-    key (supplier, invoiceId) : (Party, Text)
-    maintainer key._1
 
     -- Buyer confirms the invoice is genuine and payable.
     -- This is the precondition for the Supplier to seek financing on it.
@@ -55,8 +53,6 @@ template OpenInvoice
     signatory supplier, buyer
     observer operator
 
-    key (supplier, invoiceId) : (Party, Text)
-    maintainer key._1
 
     choice OpenInvoice_Withdraw : ContractId Invoice
       controller supplier
