@@ -15,11 +15,11 @@ data Parties = Parties with
 
 setupParties : Script Parties
 setupParties = do
-  supplier   <- allocatePartyWithHint "Supplier"   (PartyIdHint "Supplier")
-  buyer      <- allocatePartyWithHint "Buyer"      (PartyIdHint "Buyer")
-  financier1 <- allocatePartyWithHint "Financier1" (PartyIdHint "Financier1")
-  financier2 <- allocatePartyWithHint "Financier2" (PartyIdHint "Financier2")
-  operator   <- allocatePartyWithHint "Operator"   (PartyIdHint "Operator")
+  supplier   <- allocatePartyByHint "Supplier"   (PartyIdHint "Supplier")
+  buyer      <- allocatePartyByHint "Buyer"      (PartyIdHint "Buyer")
+  financier1 <- allocatePartyByHint "Financier1" (PartyIdHint "Financier1")
+  financier2 <- allocatePartyByHint "Financier2" (PartyIdHint "Financier2")
+  operator   <- allocatePartyByHint "Operator"   (PartyIdHint "Operator")
   pure Parties with supplier, buyer, financier1, financier2, operator
 
 -- | Full lifecycle demo + privacy proof, runnable against the sandbox
