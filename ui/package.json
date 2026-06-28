@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@daml.js/057eed1fd48c238491b8ea06b9b5bf85a5d4c9275dd3f6183e0e6b01730cc2ba": "file:../daml.js/057eed1fd48c238491b8ea06b9b5bf85a5d4c9275dd3f6183e0e6b01730cc2ba",
     "@daml.js/veil-0.0.1": "file:../daml.js/veil-0.0.1",
-    "@daml.js/veil-ui": "file:daml.js/veil-ui-0.1.0",
     "@daml/hub-react": "^1.0.0",
     "@daml/ledger": "2.10.4",
     "@daml/react": "2.10.4",
