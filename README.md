@@ -125,7 +125,7 @@ This builds, launches the sandbox, runs the init script, and opens Navigator so 
 
 ```
 veil/
-├── daml.yaml              # Project config (SDK 2.10.4)
+├── daml.yaml              # Project config (SDK 3.4.11)
 ├── daml/
 │   ├── Invoice.daml        # Invoice + OpenInvoice templates
 │   ├── Auction.daml        # Bid + FinancingAgreement templates (the privacy core)
