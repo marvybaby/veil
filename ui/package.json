@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@babel/plugin-proposal-optional-chaining": "^7.21.0",
+    "@c7-digital/ledger": "^0.0.29",
     "@daml.js/057eed1fd48c238491b8ea06b9b5bf85a5d4c9275dd3f6183e0e6b01730cc2ba": "file:../daml.js/057eed1fd48c238491b8ea06b9b5bf85a5d4c9275dd3f6183e0e6b01730cc2ba",
     "@daml.js/40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7": "file:../daml.js/40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7",
     "@daml.js/518032f41fd0175461b35ae0c9691e08b4aea55e62915f8360af2cc7a1f2ba6c": "file:../daml.js/518032f41fd0175461b35ae0c9691e08b4aea55e62915f8360af2cc7a1f2ba6c",
@@ -27,7 +29,7 @@
     "@daml/hub-react": "^1.0.0",
     "@daml/ledger": "2.10.4",
     "@daml/react": "2.10.4",
-    "@daml/types": "2.10.4",
+    "@daml/types": "^3.4.11",
     "dotenv": "^8.2.0",
     "jwt-simple": "^0.5.6",
     "react": "^17.0.0",
@@ -67,5 +69,13 @@
     "http-proxy-middleware": "^1.0.4",
     "react-scripts": "^4.0.3",
     "typescript": "~3.8.3"
+  },
+  "babel": {
+    "presets": [
+      "react-app"
+    ],
+    "plugins": [
+      "@babel/plugin-proposal-optional-chaining"
+    ]
   }
 }
