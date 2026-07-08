@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Button, Form, Grid, Header, Image, Segment } from 'semantic-ui-react';
+import { Button, Grid, Header, Segment } from 'semantic-ui-react';
+import { initLedger } from '../ledgerService';
 import { Credentials } from '../Credentials';
-import { encode } from 'jwt-simple';
+import { makeToken } from '../config';
 
 type Props = {
   onLogin: (credentials: Credentials) => void;
@@ -9,30 +10,20 @@ type Props = {
 
 const LOGIN_PARTIES = ['Supplier', 'Buyer', 'Financier1', 'Financier2', 'Operator'];
 
-const makeToken = (party: string): string => {
-  const payload = {
-    sub: party,
-    scope: 'daml_ledger_api',
-    act: {
-      sub: party,
-    },
-    aud: 'https://daml.com/ledger-api',
-  };
-  return encode(payload, 'secret', 'HS256');
-};
-
 const LoginScreen: React.FC<Props> = ({ onLogin }) => {
-  const [party, setParty] = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeParty, setActiveParty] = useState('');
 
-  const handleLogin = async (selectedParty: string) => {
+  const handleLogin = async (party: string) => {
     setLoading(true);
+    setActiveParty(party);
     try {
-      const token = makeToken(selectedParty);
+      initLedger(party);
+      const token = makeToken(party);
       onLogin({
-        party: selectedParty,
+        party,
         token,
-        user: { userId: selectedParty, primaryParty: selectedParty },
+        user: { userId: party, primaryParty: party },
       });
     } catch (e) {
       alert(`Login error: ${JSON.stringify(e)}`);
@@ -63,8 +54,8 @@ const LoginScreen: React.FC<Props> = ({ onLogin }) => {
               primary={p === 'Supplier'}
               secondary={p.startsWith('Financier')}
               style={{ marginBottom: '0.5em' }}
-              loading={loading && party === p}
-              onClick={() => { setParty(p); handleLogin(p); }}
+              loading={loading && activeParty === p}
+              onClick={() => handleLogin(p)}
             >
               {p === 'Supplier' && '📄 '}
               {p.startsWith('Financier') && '💰 '}
