@@ -11,8 +11,7 @@ const httpJsonDevUrl =
  */
 const filter = function (pathname, req) {
   // Proxy requests to the http json api when in development
-  const proxied = pathname.match("^/v1") && process.env.NODE_ENV === "development";
-
+  const proxied = (pathname.match("^/v1") || pathname.match("^/v2")) && process.env.NODE_ENV === "development";
   if (proxied) {
     console.log(
       `Request with path ${pathname} proxied from host ${req.headers.host} to host ${httpJsonDevUrl}`
