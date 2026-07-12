@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Form, Header, Input, Message, Segment, Table } from 'semantic-ui-react';
-import { getParty, queryContracts, createContract, exerciseChoice } from '../ledgerService';
+import { getParty, queryContracts, createContract, exerciseChoice, getProvider } from '../ledgerService';
 
 const INVOICE_TEMPLATE = '0cc9d0b630445d98cf59e246f51b49ad51499d521a51b1607cbddf687b5ba583:Invoice:Invoice';
 const OPEN_INVOICE_TEMPLATE = '0cc9d0b630445d98cf59e246f51b49ad51499d521a51b1607cbddf687b5ba583:Invoice:OpenInvoice';
@@ -23,27 +23,28 @@ const SupplierView: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   const fetchData = async () => {
-    try {
+  try {
+    const provider = getProvider();
+    if (provider) {
       const [inv, open, bid, agr] = await Promise.all([
-        queryContracts(INVOICE_TEMPLATE),
-        queryContracts(OPEN_INVOICE_TEMPLATE),
-        queryContracts(BID_TEMPLATE),
-        queryContracts(AGREEMENT_TEMPLATE),
+        provider.getActiveContracts({ templateId: '#veil:Invoice:Invoice' }).catch(() => []),
+        provider.getActiveContracts({ templateId: '#veil:Invoice:OpenInvoice' }).catch(() => []),
+        provider.getActiveContracts({ templateId: '#veil:Auction:Bid' }).catch(() => []),
+        provider.getActiveContracts({ templateId: '#veil:Auction:FinancingAgreement' }).catch(() => []),
       ]);
-      setInvoices(inv);
-      setOpenInvoices(open);
-      setBids(bid);
-      setAgreements(agr);
-    } catch (e) {
-      console.error('Error fetching data:', e);
+      setInvoices(inv || []);
+      setOpenInvoices(open || []);
+      setBids(bid || []);
+      setAgreements(agr || []);
     }
-  };
+  } catch (e) {
+    console.error('Error fetching data:', e);
+  }
+};
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  fetchData();
+}, []);
 
   const handleCreateInvoice = async () => {
     if (!invoiceId || !buyer || !amount || !description) {
