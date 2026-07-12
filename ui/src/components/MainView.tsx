@@ -1,40 +1,31 @@
-import React, { useState } from 'react';
-import { Container, Header, Segment, Tab } from 'semantic-ui-react';
-import { userContext } from './App';
+import React, { useContext } from 'react';
+import { Container, Header, Segment } from 'semantic-ui-react';
+import { RoleContext } from './App';
 import SupplierView from './SupplierView';
-
 import FinancierView from './FinancierView';
 import BuyerView from './BuyerView';
 
 const MainView: React.FC = () => {
-  const party = userContext.useParty();
-
-  const getRole = (party: string) => {
-    if (party.startsWith('Supplier')) return 'supplier';
-    if (party.startsWith('Financier')) return 'financier';
-    if (party.startsWith('Buyer')) return 'buyer';
-    return 'unknown';
-  };
-
-  const role = getRole(party);
+  const role = useContext(RoleContext);
 
   return (
     <Container style={{ marginTop: '2em' }}>
       <Header as='h2'>
-        Welcome, {party}
+        {role === 'Supplier' && '📄 Supplier Dashboard'}
+        {role === 'Financier' && '💰 Financier Dashboard'}
+        {role === 'Buyer' && '🏢 Buyer Dashboard'}
         <Header.Subheader>
-          {role === 'supplier' && 'Issue invoices and accept financing offers'}
-          {role === 'financier' && 'Browse open invoices and submit private bids'}
-          {role === 'buyer' && 'View your financed invoices and settle at maturity'}
-          {role === 'unknown' && 'Connected to Veil ledger'}
+          {role === 'Supplier' && 'Issue invoices and accept financing offers'}
+          {role === 'Financier' && 'Browse open invoices and submit private bids'}
+          {role === 'Buyer' && 'View your financed invoices and settle at maturity'}
         </Header.Subheader>
       </Header>
 
       <Segment>
-        {role === 'supplier' && <SupplierView />}
-        {role === 'financier' && <FinancierView />}
-        {role === 'buyer' && <BuyerView />}
-        {role === 'unknown' && <p>Your party role could not be determined.</p>}
+        {role === 'Supplier' && <SupplierView />}
+        {role === 'Financier' && <FinancierView />}
+        {role === 'Buyer' && <BuyerView />}
+        {!role && <p>Role not set. Please log in again.</p>}
       </Segment>
     </Container>
   );
