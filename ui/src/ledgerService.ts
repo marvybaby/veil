@@ -1,13 +1,13 @@
 import { makeToken } from './config';
 
-const BASE_URL = '';
+const DEVNET_PROXY = '/devnet';
 
 let _party: string | null = null;
 let _token: string | null = null;
 
-export const initLedger = (party: string) => {
+export const initLedger = (party: string, token?: string) => {
   _party = party;
-  _token = makeToken(party);
+  _token = token || makeToken(party);
 };
 
 export const getParty = (): string => {
@@ -21,17 +21,15 @@ const getHeaders = () => ({
 });
 
 export const queryContracts = async (templateId: string): Promise<any[]> => {
-  const response = await fetch(`${BASE_URL}/v2/state/active-contracts`, {
+  const response = await fetch(`${DEVNET_PROXY}/v2/state/active-contracts`, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify({
-      activeAtOffset: '',
+      activeAtOffset: 0,
       filter: {
         filtersByParty: {
           [_party!]: {
-            cumulative: [{
-              wildcardFilter: {}
-            }]
+            cumulative: [{ wildcardFilter: {} }]
           }
         }
       },
@@ -39,7 +37,7 @@ export const queryContracts = async (templateId: string): Promise<any[]> => {
     }),
   });
   const text = await response.text();
-  console.log('ACS raw response:', response.status, text.substring(0, 500));
+  console.log('ACS response:', response.status, text.substring(0, 300));
   const lines = text.trim().split('\n').filter(Boolean);
   const contracts: any[] = [];
   for (const line of lines) {
@@ -57,23 +55,38 @@ export const queryContracts = async (templateId: string): Promise<any[]> => {
 };
 
 export const createContract = async (templateId: string, payload: object): Promise<any> => {
-  const response = await fetch(`${BASE_URL}/v2/commands/submit-and-wait`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({
+  const provider = getProvider();
+  if (provider) {
+    // Use Loop SDK provider to submit — it handles auth internally
+    const result = await provider.submitAndWaitForTransaction({
+      commandId: `cmd-${Date.now()}`,
       commands: [{
-        createCommand: {
+        CreateCommand: {
           templateId,
           createArguments: payload,
         }
       }],
       actAs: [_party],
       readAs: [_party],
+    });
+    console.log('CREATE via Loop SDK:', result);
+    return result;
+  }
+  // Fallback to direct API
+  const response = await fetch(`${DEVNET_PROXY}/v2/commands/submit-and-wait`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      commandId: `cmd-${Date.now()}`,
+      commands: [{ CreateCommand: { templateId, createArguments: payload } }],
+      actAs: [_party],
+      readAs: [_party],
     }),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(JSON.stringify(data));
-  return data;
+  const text = await response.text();
+  console.log('CREATE response:', response.status, text.substring(0, 300));
+  if (!response.ok) throw new Error(text);
+  return JSON.parse(text);
 };
 
 export const exerciseChoice = async (
@@ -82,12 +95,12 @@ export const exerciseChoice = async (
   choiceName: string,
   argument: object
 ): Promise<any> => {
-  const response = await fetch(`${BASE_URL}/v2/commands/submit-and-wait`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({
+  const provider = getProvider();
+  if (provider) {
+    const result = await provider.submitAndWaitForTransaction({
+      commandId: `cmd-${Date.now()}`,
       commands: [{
-        exerciseCommand: {
+        ExerciseCommand: {
           templateId,
           contractId,
           choice: choiceName,
@@ -96,9 +109,25 @@ export const exerciseChoice = async (
       }],
       actAs: [_party],
       readAs: [_party],
+    });
+    console.log('EXERCISE via Loop SDK:', result);
+    return result;
+  }
+  const response = await fetch(`${DEVNET_PROXY}/v2/commands/submit-and-wait`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      commandId: `cmd-${Date.now()}`,
+      commands: [{ ExerciseCommand: { templateId, contractId, choice: choiceName, choiceArgument: argument } }],
+      actAs: [_party],
+      readAs: [_party],
     }),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(JSON.stringify(data));
-  return data;
+  const text = await response.text();
+  console.log('EXERCISE response:', response.status, text.substring(0, 300));
+  if (!response.ok) throw new Error(text);
+  return JSON.parse(text);
+};
+export const getProvider = (): any => {
+  return (window as any).__veilAuth?.provider || null;
 };
