@@ -1,128 +1,101 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Form, Header, Input, Message, Segment, Table } from 'semantic-ui-react';
-import { userContext } from './App';
-import * as Invoice from '@daml.js/veil-0.0.1/lib/Invoice';
-import * as Auction from '@daml.js/veil-0.0.1/lib/Auction';
-import * as damlLedger from '@daml/ledger';
-import { ContractId } from '@daml/types';
+import { getParty, queryContracts, createContract, exerciseChoice, getProvider } from '../ledgerService';
+
+const OPEN_INVOICE_TEMPLATE = '0cc9d0b630445d98cf59e246f51b49ad51499d521a51b1607cbddf687b5ba583:Invoice:OpenInvoice';
+const BID_TEMPLATE = '0cc9d0b630445d98cf59e246f51b49ad51499d521a51b1607cbddf687b5ba583:Auction:Bid';
+const AGREEMENT_TEMPLATE = '0cc9d0b630445d98cf59e246f51b49ad51499d521a51b1607cbddf687b5ba583:Auction:FinancingAgreement';
 
 const FinancierView: React.FC = () => {
-  const party = userContext.useParty();
-  const ledger = userContext.useLedger();
-
-  // Live queries
-  const openInvoices = userContext.useQuery(Invoice.OpenInvoice).contracts as damlLedger.CreateEvent<Invoice.OpenInvoice>[];
-  const myBids = userContext.useQuery(Auction.Bid).contracts as damlLedger.CreateEvent<Auction.Bid>[];
-  const myDeals = userContext.useQuery(Auction.FinancingAgreement).contracts as damlLedger.CreateEvent<Auction.FinancingAgreement>[];
-
-  // Form state
-  const [selectedInvoice, setSelectedInvoice] = useState<damlLedger.CreateEvent<Invoice.OpenInvoice> | null>(null);
+  const party = getParty();
+  const [openInvoices, setOpenInvoices] = useState<any[]>([]);
+  const [myBids, setMyBids] = useState<any[]>([]);
+  const [myDeals, setMyDeals] = useState<any[]>([]);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [advanceRate, setAdvanceRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
 
+  const fetchData = async () => {
+    try {
+      const provider = getProvider();
+      if (provider) {
+        const [open, bids, deals] = await Promise.all([
+          provider.getActiveContracts({ templateId: '#veil:Invoice:OpenInvoice' }).catch(() => []),
+          provider.getActiveContracts({ templateId: '#veil:Auction:Bid' }).catch(() => []),
+          provider.getActiveContracts({ templateId: '#veil:Auction:FinancingAgreement' }).catch(() => []),
+        ]);
+        setOpenInvoices(open || []);
+        setMyBids(bids || []);
+        setMyDeals(deals || []);
+      }
+    } catch (e) {
+      console.error('Error fetching data:', e);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
   const handleSubmitBid = async () => {
-    if (!selectedInvoice || !advanceRate) {
-      alert('Please select an invoice and enter an advance rate');
-      return;
-    }
+    if (!selectedInvoice || !advanceRate) { alert('Please select an invoice and enter an advance rate'); return; }
     const rate = parseFloat(advanceRate);
-    if (isNaN(rate) || rate <= 0 || rate >= 1) {
-      alert('Advance rate must be between 0 and 1 (e.g. 0.95 for 95%)');
-      return;
-    }
+    if (isNaN(rate) || rate <= 0 || rate >= 1) { alert('Advance rate must be between 0 and 1'); return; }
     setLoading(true);
     try {
       const now = new Date().toISOString();
-      await ledger.create(Auction.Bid, {
-        supplier: selectedInvoice.payload.supplier,
-        buyer: selectedInvoice.payload.buyer,
-        financier: party,
-        invoiceId: selectedInvoice.payload.invoiceId,
-        amount: selectedInvoice.payload.amount,
-        currency: selectedInvoice.payload.currency,
-        advanceRate: advanceRate,
-        dueDate: selectedInvoice.payload.dueDate,
-        submittedAt: now,
+      const p = selectedInvoice.createArgument || selectedInvoice;
+      await createContract(BID_TEMPLATE, {
+        supplier: p.supplier, buyer: p.buyer, financier: party,
+        invoiceId: p.invoiceId, amount: p.amount, currency: p.currency,
+        advanceRate, dueDate: p.dueDate, submittedAt: now,
       });
-      setSuccess(`Private bid submitted on invoice ${selectedInvoice.payload.invoiceId} at ${(rate * 100).toFixed(1)}% advance rate. Only you and the supplier can see this bid.`);
-      setSelectedInvoice(null);
-      setAdvanceRate('');
-    } catch (e: any) {
-      alert(`Error submitting bid: ${e.message ?? JSON.stringify(e)}`);
-    }
+      setSuccess(`Private bid submitted! Only you and the supplier can see this.`);
+      setSelectedInvoice(null); setAdvanceRate(''); fetchData();
+    } catch (e: any) { alert(`Error: ${e.message ?? JSON.stringify(e)}`); }
     setLoading(false);
   };
 
   const handleWithdrawBid = async (contractId: string, invoiceId: string) => {
     try {
-      await ledger.exercise(Auction.Bid.Bid_Withdraw, contractId as ContractId<Auction.Bid>, {});
-      setSuccess(`Bid on invoice ${invoiceId} withdrawn.`);
-    } catch (e: any) {
-      alert(`Error: ${e.message ?? JSON.stringify(e)}`);
-    }
+      await exerciseChoice(BID_TEMPLATE, contractId, 'Bid_Withdraw', {});
+      setSuccess(`Bid withdrawn.`); fetchData();
+    } catch (e: any) { alert(`Error: ${e.message ?? JSON.stringify(e)}`); }
   };
 
-  const handleConfirmFunding = async (contractId: string, invoiceId: string) => {
+  const handleConfirmFunding = async (contractId: string) => {
     try {
-      await ledger.exercise(Auction.FinancingAgreement.FinancingAgreement_ConfirmFunding, contractId as ContractId<Auction.FinancingAgreement>, {});
-      setSuccess(`Funding confirmed for invoice ${invoiceId}. Buyer will now pay you at maturity.`);
-    } catch (e: any) {
-      alert(`Error: ${e.message ?? JSON.stringify(e)}`);
-    }
+      await exerciseChoice(AGREEMENT_TEMPLATE, contractId, 'FinancingAgreement_ConfirmFunding', {});
+      setSuccess(`Funding confirmed!`); fetchData();
+    } catch (e: any) { alert(`Error: ${e.message ?? JSON.stringify(e)}`); }
   };
 
   return (
     <div>
       <Header as='h3'>Financier Dashboard</Header>
-
-      {success && (
-        <Message positive onDismiss={() => setSuccess('')}>
-          {success}
-        </Message>
-      )}
+      {success && <Message positive onDismiss={() => setSuccess('')}>{success}</Message>}
 
       <Segment>
-        <Header as='h4'>Open Invoices Available for Financing ({openInvoices.length})</Header>
-        <p style={{ color: 'grey', fontSize: '0.85em' }}>
-          Select an invoice to submit a private bid. Other financiers cannot see your offer.
-        </p>
-        {openInvoices.length === 0 ? (
-          <p style={{ color: 'grey' }}>No invoices currently open for financing.</p>
-        ) : (
+        <Header as='h4'>Open Invoices ({openInvoices.length})</Header>
+        {openInvoices.length === 0 ? <p style={{ color: 'grey' }}>No invoices open for financing.</p> : (
           <Table celled selectable>
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Invoice ID</Table.HeaderCell>
-                <Table.HeaderCell>Supplier</Table.HeaderCell>
-                <Table.HeaderCell>Amount</Table.HeaderCell>
-                <Table.HeaderCell>Currency</Table.HeaderCell>
-                <Table.HeaderCell>Action</Table.HeaderCell>
-              </Table.Row>
-            </Table.Header>
+            <Table.Header><Table.Row>
+              <Table.HeaderCell>Invoice ID</Table.HeaderCell>
+              <Table.HeaderCell>Supplier</Table.HeaderCell>
+              <Table.HeaderCell>Amount</Table.HeaderCell>
+              <Table.HeaderCell>Action</Table.HeaderCell>
+            </Table.Row></Table.Header>
             <Table.Body>
-              {openInvoices.map(inv => (
-                <Table.Row
-                  key={inv.contractId}
-                  active={selectedInvoice?.contractId === inv.contractId}
-                  onClick={() => setSelectedInvoice(inv)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <Table.Cell>{inv.payload.invoiceId}</Table.Cell>
-                  <Table.Cell>{inv.payload.supplier}</Table.Cell>
-                  <Table.Cell>${Number(inv.payload.amount).toLocaleString()}</Table.Cell>
-                  <Table.Cell>{inv.payload.currency}</Table.Cell>
-                  <Table.Cell>
-                    <Button
-                      size='small'
-                      primary
-                      onClick={(e) => { e.stopPropagation(); setSelectedInvoice(inv); }}
-                    >
-                      Bid on this
-                    </Button>
-                  </Table.Cell>
-                </Table.Row>
-              ))}
+              {openInvoices.map((c, i) => {
+                const p = c.createArgument || c;
+                return (
+                  <Table.Row key={i} active={selectedInvoice === c} onClick={() => setSelectedInvoice(c)} style={{ cursor: 'pointer' }}>
+                    <Table.Cell>{p.invoiceId}</Table.Cell>
+                    <Table.Cell>{p.supplier}</Table.Cell>
+                    <Table.Cell>${Number(p.amount).toLocaleString()}</Table.Cell>
+                    <Table.Cell><Button size='small' primary onClick={e => { e.stopPropagation(); setSelectedInvoice(c); }}>Bid</Button></Table.Cell>
+                  </Table.Row>
+                );
+              })}
             </Table.Body>
           </Table>
         )}
@@ -130,126 +103,68 @@ const FinancierView: React.FC = () => {
 
       {selectedInvoice && (
         <Segment color='blue'>
-          <Header as='h4'>
-            Submit Private Bid — Invoice {selectedInvoice.payload.invoiceId}
-          </Header>
-          <p style={{ color: 'grey', fontSize: '0.85em' }}>
-            Face value: ${Number(selectedInvoice.payload.amount).toLocaleString()} {selectedInvoice.payload.currency}.
-            Your bid is private — only you and the supplier will see it.
-          </p>
+          <Header as='h4'>Submit Private Bid</Header>
+          <p style={{ color: 'grey', fontSize: '0.85em' }}>Your bid is private — only you and the supplier will see it.</p>
           <Form>
             <Form.Field>
-              <label>Advance Rate (e.g. 0.95 = advance 95% of face value)</label>
-              <Input
-                placeholder='e.g. 0.95'
-                value={advanceRate}
-                onChange={e => setAdvanceRate(e.target.value)}
-              />
+              <label>Advance Rate (e.g. 0.95 = 95%)</label>
+              <Input placeholder='e.g. 0.95' value={advanceRate} onChange={e => setAdvanceRate(e.target.value)} />
             </Form.Field>
-            {advanceRate && !isNaN(parseFloat(advanceRate)) && (
-              <p style={{ color: 'green' }}>
-                You will advance ${(Number(selectedInvoice.payload.amount) * parseFloat(advanceRate)).toLocaleString()} now
-                and receive ${Number(selectedInvoice.payload.amount).toLocaleString()} at maturity.
-              </p>
-            )}
-            <Button primary loading={loading} onClick={handleSubmitBid}>
-              Submit Private Bid
-            </Button>
-            <Button onClick={() => setSelectedInvoice(null)}>
-              Cancel
-            </Button>
+            <Button primary loading={loading} onClick={handleSubmitBid}>Submit Private Bid</Button>
+            <Button onClick={() => setSelectedInvoice(null)}>Cancel</Button>
           </Form>
         </Segment>
       )}
 
       <Segment>
         <Header as='h4'>Your Active Bids ({myBids.length})</Header>
-        <p style={{ color: 'grey', fontSize: '0.85em' }}>
-          Only you and the relevant supplier can see these bids.
-        </p>
-        {myBids.length === 0 ? (
-          <p style={{ color: 'grey' }}>No active bids.</p>
-        ) : (
-          <Table celled>
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Invoice ID</Table.HeaderCell>
-                <Table.HeaderCell>Supplier</Table.HeaderCell>
-                <Table.HeaderCell>Advance Rate</Table.HeaderCell>
-                <Table.HeaderCell>Advance Amount</Table.HeaderCell>
-                <Table.HeaderCell>Action</Table.HeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {myBids.map(({ contractId, payload }) => (
-                <Table.Row key={contractId}>
-                  <Table.Cell>{payload.invoiceId}</Table.Cell>
-                  <Table.Cell>{payload.supplier}</Table.Cell>
-                  <Table.Cell>{(Number(payload.advanceRate) * 100).toFixed(1)}%</Table.Cell>
-                  <Table.Cell>
-                    ${(Number(payload.amount) * Number(payload.advanceRate)).toLocaleString()}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Button
-                      size='small'
-                      negative
-                      onClick={() => handleWithdrawBid(contractId, payload.invoiceId)}
-                    >
-                      Withdraw
-                    </Button>
-                  </Table.Cell>
+        {myBids.length === 0 ? <p style={{ color: 'grey' }}>No active bids.</p> : (
+          <Table celled><Table.Header><Table.Row>
+            <Table.HeaderCell>Invoice ID</Table.HeaderCell>
+            <Table.HeaderCell>Advance Rate</Table.HeaderCell>
+            <Table.HeaderCell>Action</Table.HeaderCell>
+          </Table.Row></Table.Header>
+          <Table.Body>
+            {myBids.map((c, i) => {
+              const p = c.createArgument || c;
+              return (
+                <Table.Row key={i}>
+                  <Table.Cell>{p.invoiceId}</Table.Cell>
+                  <Table.Cell>{(Number(p.advanceRate) * 100).toFixed(1)}%</Table.Cell>
+                  <Table.Cell><Button size='small' negative onClick={() => handleWithdrawBid(c.contractId || c.contract_id, p.invoiceId)}>Withdraw</Button></Table.Cell>
                 </Table.Row>
-              ))}
-            </Table.Body>
-          </Table>
+              );
+            })}
+          </Table.Body></Table>
         )}
       </Segment>
 
       <Segment>
         <Header as='h4'>Deals Won ({myDeals.length})</Header>
-        {myDeals.length === 0 ? (
-          <p style={{ color: 'grey' }}>No financing agreements yet.</p>
-        ) : (
-          <Table celled>
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Invoice ID</Table.HeaderCell>
-                <Table.HeaderCell>Supplier</Table.HeaderCell>
-                <Table.HeaderCell>Face Amount</Table.HeaderCell>
-                <Table.HeaderCell>Advance Amount</Table.HeaderCell>
-                <Table.HeaderCell>Status</Table.HeaderCell>
-                <Table.HeaderCell>Action</Table.HeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {myDeals.map(({ contractId, payload }) => (
-                <Table.Row key={contractId}>
-                  <Table.Cell>{payload.invoiceId}</Table.Cell>
-                  <Table.Cell>{payload.supplier}</Table.Cell>
-                  <Table.Cell>${Number(payload.faceAmount).toLocaleString()}</Table.Cell>
-                  <Table.Cell>${Number(payload.advanceAmount).toLocaleString()}</Table.Cell>
-                  <Table.Cell>{payload.status}</Table.Cell>
+        {myDeals.length === 0 ? <p style={{ color: 'grey' }}>No deals yet.</p> : (
+          <Table celled><Table.Header><Table.Row>
+            <Table.HeaderCell>Invoice ID</Table.HeaderCell>
+            <Table.HeaderCell>Face Amount</Table.HeaderCell>
+            <Table.HeaderCell>Status</Table.HeaderCell>
+            <Table.HeaderCell>Action</Table.HeaderCell>
+          </Table.Row></Table.Header>
+          <Table.Body>
+            {myDeals.map((c, i) => {
+              const p = c.createArgument || c;
+              return (
+                <Table.Row key={i}>
+                  <Table.Cell>{p.invoiceId}</Table.Cell>
+                  <Table.Cell>${Number(p.faceAmount).toLocaleString()}</Table.Cell>
+                  <Table.Cell>{p.status}</Table.Cell>
                   <Table.Cell>
-                    {payload.status === 'PendingFunding' && (
-                      <Button
-                        size='small'
-                        positive
-                        onClick={() => handleConfirmFunding(contractId, payload.invoiceId)}
-                      >
-                        Confirm Funding
-                      </Button>
-                    )}
-                    {payload.status === 'Funded' && (
-                      <span style={{ color: 'green' }}>Awaiting buyer settlement</span>
-                    )}
-                    {payload.status === 'Settled' && (
-                      <span style={{ color: 'grey' }}>✓ Settled</span>
-                    )}
+                    {p.status === 'PendingFunding' && <Button size='small' positive onClick={() => handleConfirmFunding(c.contractId || c.contract_id)}>Confirm Funding</Button>}
+                    {p.status === 'Funded' && <span style={{ color: 'green' }}>Awaiting settlement</span>}
+                    {p.status === 'Settled' && <span style={{ color: 'grey' }}>✓ Settled</span>}
                   </Table.Cell>
                 </Table.Row>
-              ))}
-            </Table.Body>
-          </Table>
+              );
+            })}
+          </Table.Body></Table>
         )}
       </Segment>
     </div>
